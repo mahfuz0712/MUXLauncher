@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">MUX Launcher</string>
+    <string name="accessibility_description">MUX Launcher uses this service for gestures (back, home, recents, notifications, lock screen, screenshot, split screen), the edge dock and window controls. It does not read or store anything from your screen.</string>
+</resources>

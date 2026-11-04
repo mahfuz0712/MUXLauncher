@@ -1,0 +1,10 @@
+{
+  "name": "MUX Launcher",
+  "description": "Sci-fi HUD home screen for Android: app drawer with search and categories, edge dock, window controls and gestures.",
+  "version": "1.0.0",
+  "ageRating": "3+",
+  "type": "app",
+  "containsAds": false,
+  "category": "Tools",
+  "author": "Mohammad Mahfuz Rahman"
+}
