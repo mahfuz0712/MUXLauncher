@@ -272,8 +272,15 @@ class EdgeStrips(private val svc: MuxService, private val wm: WindowManager, pri
     fun build() {
         destroy()
         val w = svc.px(LauncherPrefs.edgeW.coerceIn(8, 40))
-        if (LauncherPrefs.edgeLeft) add(Strip(true), overlayParams(w, ViewGroup.LayoutParams.MATCH_PARENT, Gravity.START))
-        if (LauncherPrefs.edgeRight) add(Strip(false), overlayParams(w, ViewGroup.LayoutParams.MATCH_PARENT, Gravity.END))
+        // Keep Android's outer system-back gesture inset clear. Accessibility overlays
+        // receive touches before app content and can otherwise steal native edge-back swipes.
+        val gestureSafeInset = svc.px(32)
+        if (LauncherPrefs.edgeLeft) {
+            add(Strip(true), overlayParams(w, ViewGroup.LayoutParams.MATCH_PARENT, Gravity.START, x = gestureSafeInset))
+        }
+        if (LauncherPrefs.edgeRight) {
+            add(Strip(false), overlayParams(w, ViewGroup.LayoutParams.MATCH_PARENT, Gravity.END, x = gestureSafeInset))
+        }
     }
 
     private fun add(v: View, p: WindowManager.LayoutParams) {

@@ -4,6 +4,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -39,7 +40,9 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -66,15 +69,41 @@ fun DrawerScreen(
 
     val hidden = LauncherPrefs.hidden
     val favs = LauncherPrefs.favorites
-    val visible = AppRepo.apps.filter { !hidden.contains(it.key) }
+    val catOverrides = LauncherPrefs.catMap
+
+    // Cache the visible list and category counts instead of rebuilding them on every recomposition.
+    val visible = remember(AppRepo.apps, hidden) {
+        AppRepo.apps.filterNot { it.key in hidden }
+    }
     fun inCat(a: AppEntry, k: Cat): Boolean = when (k) {
         Cat.ALL -> true
-        Cat.FAV -> favs.contains(a.key)
-        else -> a.cat == k
+        Cat.FAV -> a.key in favs
+        else -> (Cat.from(catOverrides[a.key]) ?: a.auto) == k
+    }
+    val counts = remember(visible, favs, catOverrides) {
+        buildMap {
+            put(Cat.ALL, visible.size)
+            put(Cat.FAV, visible.count { it.key in favs })
+            Cat.values().filter { it != Cat.ALL && it != Cat.FAV }.forEach { category ->
+                put(category, visible.count { (Cat.from(catOverrides[it.key]) ?: it.auto) == category })
+            }
+        }
+    }
+    val categories = remember(counts) {
+        Cat.values().filter { it == Cat.ALL || (counts[it] ?: 0) > 0 }
     }
     val q = query.trim()
-    val list = visible.filter {
-        inCat(it, cat) && (q.isEmpty() || it.label.contains(q, true) || it.pkg.contains(q, true))
+    val list = remember(visible, cat, q, favs, catOverrides) {
+        visible.filter {
+            inCat(it, cat) && (q.isEmpty() || it.label.contains(q, true) || it.pkg.contains(q, true))
+        }
+    }
+    val density = LocalDensity.current
+    val horizontalThreshold = with(density) { 64.dp.toPx() }
+    val closeThreshold = with(density) { 90.dp.toPx() }
+
+    LaunchedEffect(categories, catName) {
+        if (cat !in categories) catName = Cat.ALL.name
     }
 
     LaunchedEffect(focusSearch) {
@@ -89,6 +118,7 @@ fun DrawerScreen(
     }
 
     // Pull down at the top of the list to close.
+    val closeThresholdPx by rememberUpdatedState(closeThreshold)
     val nested = remember {
         object : NestedScrollConnection {
             var acc = 0f
@@ -98,7 +128,7 @@ fun DrawerScreen(
             }
 
             override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity {
-                if (acc > 220f) closeNow()
+                if (acc > closeThresholdPx) closeNow()
                 acc = 0f
                 return Velocity.Zero
             }
@@ -120,9 +150,8 @@ fun DrawerScreen(
             }
             Spacer(Modifier.height(6.dp))
             Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
-                for (k in Cat.values()) {
-                    val n = visible.count { inCat(it, k) }
-                    if (n == 0 && k != Cat.ALL && k != Cat.FAV) continue
+                for (k in categories) {
+                    val n = counts[k] ?: 0
                     HudButton(
                         label = k.label + " " + n,
                         modifier = Modifier.height(34.dp).widthIn(min = 70.dp),
@@ -142,9 +171,37 @@ fun DrawerScreen(
                     LazyVerticalGrid(
                         columns = GridCells.Fixed(LauncherPrefs.drawerCols.coerceIn(3, 6)),
                         state = gridState,
-                        modifier = Modifier.weight(1f).fillMaxHeight().nestedScroll(nested)
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxHeight()
+                            .nestedScroll(nested)
+                            .pointerInput(cat, categories, horizontalThreshold) {
+                                var dragX = 0f
+                                detectHorizontalDragGestures(
+                                    onDragStart = { dragX = 0f },
+                                    onHorizontalDrag = { change, amount ->
+                                        dragX += amount
+                                        change.consume()
+                                    },
+                                    onDragEnd = {
+                                        if (kotlin.math.abs(dragX) >= horizontalThreshold && categories.size > 1) {
+                                            val index = categories.indexOf(cat).coerceAtLeast(0)
+                                            val next = if (dragX < 0f) {
+                                                (index + 1).coerceAtMost(categories.lastIndex)
+                                            } else {
+                                                (index - 1).coerceAtLeast(0)
+                                            }
+                                            if (next != index) {
+                                                catName = categories[next].name
+                                                scope.launch { gridState.scrollToItem(0) }
+                                            }
+                                        }
+                                    },
+                                    onDragCancel = { dragX = 0f }
+                                )
+                            }
                     ) {
-                        items(list, key = { it.key }) { a ->
+                        items(list, key = { it.key }, contentType = { "app" }) { a ->
                             AppTile(a, Modifier.fillMaxWidth(), src = Src.DRAWER, onClick = { onOpen(a) }, onLong = { onMenu(a) })
                         }
                     }
