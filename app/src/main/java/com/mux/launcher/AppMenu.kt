@@ -34,7 +34,7 @@ private fun MenuBtn(label: String, kind: KeyKind = KeyKind.OP, onClick: () -> Un
 
 /** Long-press menu of an app. */
 @Composable
-fun AppMenuDialog(app: AppEntry, onDismiss: () -> Unit, onSplit: (AppEntry) -> Unit) {
+fun AppMenuDialog(app: AppEntry, page: Int, onDismiss: () -> Unit, onSplit: (AppEntry) -> Unit) {
     val ctx = LocalContext.current
     var mode by remember { mutableStateOf("MENU") }
     val k = app.key
@@ -51,8 +51,9 @@ fun AppMenuDialog(app: AppEntry, onDismiss: () -> Unit, onSplit: (AppEntry) -> U
                 MenuBtn("OPEN", KeyKind.ACCENT) { Launch.open(ctx, app); onDismiss() }
                 MenuBtn("OPEN IN FLOATING WINDOW") { Launch.floating(ctx, app); onDismiss() }
                 MenuBtn("SPLIT SCREEN WITH ...") { onSplit(app) }
-                MenuBtn(if (LauncherPrefs.homeApps.contains(k)) "REMOVE FROM HOME" else "ADD TO HOME") {
-                    change { LauncherPrefs.homeApps = LauncherPrefs.toggled(LauncherPrefs.homeApps, k) }
+                MenuBtn(if (Grid.hasApp(k)) "REMOVE FROM HOME" else "ADD TO HOME") {
+                    if (Grid.hasApp(k)) Grid.removeAppEverywhere(k) else Grid.addApp(k, page)
+                    onDismiss()
                 }
                 MenuBtn(if (LauncherPrefs.dock.contains(k)) "REMOVE FROM DOCK" else "ADD TO DOCK") {
                     if (!LauncherPrefs.dock.contains(k) && LauncherPrefs.dock.size >= 5) {
@@ -68,7 +69,10 @@ fun AppMenuDialog(app: AppEntry, onDismiss: () -> Unit, onSplit: (AppEntry) -> U
                     change { LauncherPrefs.favorites = LauncherPrefs.toggled(LauncherPrefs.favorites, k) }
                 }
                 MenuBtn("CATEGORY: " + app.cat.label) { mode = "CAT" }
-                MenuBtn("HIDE APP") { change { LauncherPrefs.hidden = LauncherPrefs.hidden + k } }
+                MenuBtn("HIDE APP") {
+                    Grid.removeAppEverywhere(k)
+                    change { LauncherPrefs.hidden = LauncherPrefs.hidden + k }
+                }
                 MenuBtn("APP INFO", KeyKind.FN) {
                     try {
                         ctx.startActivity(

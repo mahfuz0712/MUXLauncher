@@ -33,13 +33,14 @@ object LauncherPrefs {
     var gUp by mutableStateOf(GestureAction.DRAWER)
     var gDown by mutableStateOf(GestureAction.NOTIFICATIONS)
     var gDouble by mutableStateOf(GestureAction.LOCK)
-    var gLong by mutableStateOf(GestureAction.SETTINGS)
+    var gLong by mutableStateOf(GestureAction.OVERVIEW)
 
     var edgeLeft by mutableStateOf(true)
     var edgeRight by mutableStateOf(true)
     var edgeMode by mutableStateOf("FULL")
-    var handleY by mutableStateOf(45)
-    var windowBar by mutableStateOf(true)
+    var edgeHold by mutableStateOf(3)
+    var edgeW by mutableStateOf(14)
+    var homeRows by mutableStateOf(6)
     var edgeBack by mutableStateOf(false)
     var bottomBar by mutableStateOf(false)
 
@@ -76,16 +77,25 @@ object LauncherPrefs {
         gUp = GestureAction.from(p.getString("gUp", null), GestureAction.DRAWER)
         gDown = GestureAction.from(p.getString("gDown", null), GestureAction.NOTIFICATIONS)
         gDouble = GestureAction.from(p.getString("gDouble", null), GestureAction.LOCK)
-        gLong = GestureAction.from(p.getString("gLong", null), GestureAction.SETTINGS)
+        gLong = GestureAction.from(p.getString("gLong", null), GestureAction.OVERVIEW)
         edgeLeft = p.getBoolean("edgeLeft", true)
         edgeRight = p.getBoolean("edgeRight", true)
         edgeMode = p.getString("edgeMode", "FULL") ?: "FULL"
-        handleY = p.getInt("handleY", 45)
-        windowBar = p.getBoolean("windowBar", true)
+        edgeHold = p.getInt("edgeHold", 3)
+        edgeW = p.getInt("edgeW", 14)
+        homeRows = p.getInt("homeRows", 6)
         edgeBack = p.getBoolean("edgeBack", false)
         bottomBar = p.getBoolean("bottomBar", false)
         seeded = p.getBoolean("seeded", false)
+        if (p.getInt("ver", 0) < 2) {
+            // 1.0.1: long press on empty space now opens the home editor
+            if (gLong == GestureAction.SETTINGS) gLong = GestureAction.OVERVIEW
+            p.edit().putInt("ver", 2).putString("gLong", gLong.name).apply()
+        }
     }
+
+    fun getRaw(k: String): String? = sp?.getString(k, null)
+    fun putRaw(k: String, v: String) { sp?.edit()?.putString(k, v)?.apply() }
 
     fun commit(notify: Boolean = true) {
         val e = sp?.edit() ?: return
@@ -110,8 +120,9 @@ object LauncherPrefs {
         e.putBoolean("edgeLeft", edgeLeft)
         e.putBoolean("edgeRight", edgeRight)
         e.putString("edgeMode", edgeMode)
-        e.putInt("handleY", handleY)
-        e.putBoolean("windowBar", windowBar)
+        e.putInt("edgeHold", edgeHold)
+        e.putInt("edgeW", edgeW)
+        e.putInt("homeRows", homeRows)
         e.putBoolean("edgeBack", edgeBack)
         e.putBoolean("bottomBar", bottomBar)
         e.putBoolean("seeded", seeded)

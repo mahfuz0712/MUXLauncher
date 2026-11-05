@@ -160,7 +160,7 @@ fun SetupScreen() {
             Btn("OPEN ACCESSIBILITY SETTINGS", KeyKind.ACCENT) { go(ctx, Settings.ACTION_ACCESSIBILITY_SETTINGS) }
             Btn("ALLOW RESTRICTED SETTINGS (APP INFO)", KeyKind.FN) { Util.openAppSettings(ctx) }
             Hint("Turn on MUX Launcher under Installed / Downloaded apps. If it is greyed out (Android 13+ for apps outside the Play Store): App info > ⋮ menu > Allow restricted settings, then try again.")
-            Hint("This service powers: back / recents / notifications / lock / screenshot / split screen, the edge dock and the window bar. It only sees which app is in front, never your screen text.")
+            Hint("This service powers: back / recents / notifications / lock / screenshot / split screen, the invisible edge zones for the edge dock, and counting windows for split screen. It never reads your screen text.")
         }
         Spacer(Modifier.height(8.dp))
         HudPanel(Modifier.fillMaxWidth(), "3 · KEEP IT ALIVE") {
@@ -195,6 +195,9 @@ fun LayoutScreen() {
             SettingRow("HOME COLUMNS", "icons per row on home", LauncherPrefs.homeCols.toString()) {
                 LauncherPrefs.homeCols = if (LauncherPrefs.homeCols >= 6) 3 else LauncherPrefs.homeCols + 1; LauncherPrefs.commit()
             }
+            SettingRow("HOME ROWS", "rows of icons on home pages", LauncherPrefs.homeRows.toString()) {
+                LauncherPrefs.homeRows = if (LauncherPrefs.homeRows >= 8) 4 else LauncherPrefs.homeRows + 1; LauncherPrefs.commit()
+            }
             SettingRow("DRAWER COLUMNS", "icons per row in the app drawer", LauncherPrefs.drawerCols.toString()) {
                 LauncherPrefs.drawerCols = if (LauncherPrefs.drawerCols >= 6) 3 else LauncherPrefs.drawerCols + 1; LauncherPrefs.commit()
             }
@@ -226,6 +229,7 @@ fun LayoutScreen() {
                 LauncherPrefs.dock = emptyList()
                 LauncherPrefs.homeApps = emptyList()
                 LauncherPrefs.edgeApps = emptyList()
+                Grid.clearAll()
                 LauncherPrefs.seeded = false
                 LauncherPrefs.commit()
                 AppRepo.reload(ctx)
@@ -246,18 +250,18 @@ fun GestureScreen() {
             SettingRow("SWIPE DOWN", "anywhere on home", LauncherPrefs.gDown.label) { LauncherPrefs.gDown = LauncherPrefs.gDown.next(); LauncherPrefs.commit() }
             SettingRow("DOUBLE TAP", "on empty space", LauncherPrefs.gDouble.label) { LauncherPrefs.gDouble = LauncherPrefs.gDouble.next(); LauncherPrefs.commit() }
             SettingRow("LONG PRESS", "on empty space", LauncherPrefs.gLong.label) { LauncherPrefs.gLong = LauncherPrefs.gLong.next(); LauncherPrefs.commit() }
-            Hint("Tap a button to cycle through the actions. Swipe left/right changes the home page. Swipe down in the drawer (at the top) closes it. Back always returns to the main home page.")
+            Hint("Tap a button to cycle through the actions. Pinch in on the home screen opens the home editor (widgets, wallpaper, settings). Long-press an app and drag it anywhere; drop it on another app to make a folder. Swipe left/right changes the home page. Swipe down in the drawer (at the top) closes it. Back always returns to the main home page.")
         }
         Spacer(Modifier.height(8.dp))
         HudPanel(Modifier.fillMaxWidth(), "OVER ALL APPS (NEEDS MUX SERVICE)") {
             StatusLine(svc, "MUX SERVICE IS RUNNING", "MUX SERVICE IS OFF (SETUP TAB)")
-            SettingRow("EDGE BACK", "swipe in from the left / right screen edge = back", onOff(LauncherPrefs.edgeBack)) {
+            SettingRow("EDGE BACK", "quick swipe in from the left / right edge = back", onOff(LauncherPrefs.edgeBack)) {
                 LauncherPrefs.edgeBack = !LauncherPrefs.edgeBack; LauncherPrefs.commit()
             }
             SettingRow("BOTTOM BAR", "swipe up = home, up + hold = recent apps, sideways = back", onOff(LauncherPrefs.bottomBar)) {
                 LauncherPrefs.bottomBar = !LauncherPrefs.bottomBar; LauncherPrefs.commit()
             }
-            Hint("These draw thin touch strips above every app. Use them with 3-button navigation, or if you want extra gestures. With the phone's own gesture navigation they can trigger twice, so keep them OFF there.")
+            Hint("The edge zones are the same invisible strips that open the edge dock when you hold. Use them with 3-button navigation, or if you want extra gestures. With the phone's own gesture navigation they can trigger twice, so keep them OFF there.")
         }
         Spacer(Modifier.height(8.dp))
         HudPanel(Modifier.fillMaxWidth(), "TEST") {
@@ -276,6 +280,7 @@ fun GestureScreen() {
 }
 
 private fun KeyboardKind(): KeyKind = KeyKind.OP
+private fun KeyBtn(): KeyKind = KeyKind.OP
 
 @Composable
 private fun AppListEditor(keys: List<String>, max: Int, onChange: (List<String>) -> Unit) {
@@ -314,18 +319,19 @@ fun DockScreen() {
                 LauncherPrefs.edgeMode = when (LauncherPrefs.edgeMode) { "FULL" -> "FLOAT"; "FLOAT" -> "SPLIT"; else -> "FULL" }
                 LauncherPrefs.commit()
             }
-            SettingRow("HANDLE HEIGHT", "where the handle sits on the edge", LauncherPrefs.handleY.toString() + "%") {
-                LauncherPrefs.handleY = if (LauncherPrefs.handleY >= 80) 20 else LauncherPrefs.handleY + 10; LauncherPrefs.commit()
+            SettingRow("HOLD TIME", "swipe in from the edge and hold this long", LauncherPrefs.edgeHold.toString() + " SEC") {
+                LauncherPrefs.edgeHold = if (LauncherPrefs.edgeHold >= 5) 1 else LauncherPrefs.edgeHold + 1; LauncherPrefs.commit()
+            }
+            SettingRow("EDGE ZONE", "width of the invisible edge area", LauncherPrefs.edgeW.toString() + " DP") {
+                LauncherPrefs.edgeW = if (LauncherPrefs.edgeW >= 30) 8 else LauncherPrefs.edgeW + 6; LauncherPrefs.commit()
             }
             Btn("OPEN DOCK NOW", KeyKind.OP) { Actions.run(ctx, GestureAction.DOCK) }
-            Hint("Swipe in from (or tap) the small handle on the screen edge, over any app. Needs MUX service (SETUP tab).")
+            Hint("Put a finger on the very edge of the screen, swipe inward and keep holding. After the hold time the dock slides out, over any app. There is nothing to see on the edge. Needs MUX service (SETUP tab).")
         }
         Spacer(Modifier.height(8.dp))
-        HudPanel(Modifier.fillMaxWidth(), "WINDOW BAR") {
-            SettingRow("WINDOW BAR", "small bar over apps: MIN / MAX / SPLIT / CLOSE", onOff(LauncherPrefs.windowBar)) {
-                LauncherPrefs.windowBar = !LauncherPrefs.windowBar; LauncherPrefs.commit()
-            }
-            Hint("Tap the ◈ diamond to open the bar, drag it to move it. MIN = go home, MAX = leave split screen, SPLIT = split screen on/off, CLOSE = stop the app.")
+        HudPanel(Modifier.fillMaxWidth(), "SPLIT SCREEN / WINDOWS") {
+            Btn("SPLIT SCREEN NOW", KeyBtn()) { Actions.run(ctx, GestureAction.SPLIT) }
+            Hint("Set TAP MODE to SPLIT: while an app is open, pull the edge dock and tap a second app, it opens in the other half. Or long-press an app > SPLIT SCREEN WITH. FLOAT needs freeform windows (SETUP tab, step 4); the system draws the window controls then.")
         }
         Spacer(Modifier.height(8.dp))
         HudPanel(Modifier.fillMaxWidth(), "EDGE DOCK APPS") {

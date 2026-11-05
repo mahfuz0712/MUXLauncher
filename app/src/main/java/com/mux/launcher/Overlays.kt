@@ -104,73 +104,15 @@ private fun outline(ctx: Context, color: Int, filled: Boolean): GradientDrawable
         setColor(if (filled) (color and 0x00FFFFFF) or (0x40 shl 24) else 0x00000000)
     }
 
-/** Edge dock: a small handle on the screen edge(s) that slides out a panel of apps. */
+/** The edge dock panel. It has no handle: it opens when you swipe in from a screen edge and hold (see [EdgeStrips]). */
 class EdgeDock(private val svc: MuxService, private val wm: WindowManager) {
-    private val handles = ArrayList<View>()
     private var scrim: FrameLayout? = null
     private val main = Handler(Looper.getMainLooper())
 
     val isOpen: Boolean get() = scrim != null
 
-    fun build() {
-        destroy()
-        if (LauncherPrefs.edgeLeft) addHandle(true)
-        if (LauncherPrefs.edgeRight) addHandle(false)
-    }
-
     fun destroy() {
         close()
-        for (h in handles) try { wm.removeView(h) } catch (e: Exception) { }
-        handles.clear()
-    }
-
-    private inner class Handle(val left: Boolean) : View(svc) {
-        private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
-        private var downX = 0f
-        private var fired = false
-
-        override fun onDraw(canvas: Canvas) {
-            paint.color = (Pal.primary and 0x00FFFFFF) or (0xB0 shl 24)
-            val t = context.px(5).toFloat()
-            val r = if (left) RectF(0f, height * 0.15f, t, height * 0.85f)
-            else RectF(width - t, height * 0.15f, width.toFloat(), height * 0.85f)
-            canvas.drawRoundRect(r, t, t, paint)
-        }
-
-        @SuppressLint("ClickableViewAccessibility")
-        override fun onTouchEvent(ev: MotionEvent): Boolean {
-            when (ev.actionMasked) {
-                MotionEvent.ACTION_DOWN -> {
-                    downX = ev.rawX
-                    fired = false
-                }
-                MotionEvent.ACTION_MOVE -> {
-                    val dx = ev.rawX - downX
-                    val inward = if (left) dx else -dx
-                    if (!fired && inward > context.px(14)) {
-                        fired = true
-                        open(left)
-                    }
-                }
-                MotionEvent.ACTION_UP -> {
-                    if (!fired && abs(ev.rawX - downX) < context.px(8)) open(left)
-                }
-            }
-            return true
-        }
-    }
-
-    private fun addHandle(left: Boolean) {
-        val h = Handle(left)
-        val hh = svc.px(120)
-        val screenH = svc.resources.displayMetrics.heightPixels
-        val y = (screenH * LauncherPrefs.handleY / 100f - hh / 2f).toInt().coerceAtLeast(0)
-        val g = (if (left) Gravity.START else Gravity.END) or Gravity.TOP
-        try {
-            wm.addView(h, overlayParams(svc.px(18), hh, g, 0, y))
-            handles.add(h)
-        } catch (e: Exception) {
-        }
     }
 
     fun close() {
@@ -274,114 +216,81 @@ class EdgeDock(private val svc: MuxService, private val wm: WindowManager) {
     }
 }
 
-/** Small floating bar over other apps: MIN / MAX / SPLIT / CLOSE. Tap the diamond to expand it. */
-class WindowBar(private val svc: MuxService, private val wm: WindowManager) {
-    private var view: HudFrame? = null
-    private var params: WindowManager.LayoutParams? = null
-    private val buttons = ArrayList<View>()
-    private var expanded = false
+/**
+ * Invisible touch zones on the left and right screen edge. Swipe in from the edge and keep holding
+ * (default 3 seconds) and the edge dock opens. There is nothing to see on screen.
+ * A quick swipe in from the edge is "back" when EDGE BACK is on.
+ */
+class EdgeStrips(private val svc: MuxService, private val wm: WindowManager, private val dock: EdgeDock) {
+    private val views = ArrayList<View>()
+    private val main = Handler(Looper.getMainLooper())
 
-    @SuppressLint("ClickableViewAccessibility")
-    fun build() {
-        destroy()
-        val bar = HudFrame(svc)
-        bar.orientation = LinearLayout.HORIZONTAL
-        bar.gravity = Gravity.CENTER_VERTICAL
-        bar.setPadding(svc.px(8), svc.px(2), svc.px(8), svc.px(2))
-
-        val grip = label(svc, "◈", 16f, Pal.primary, true)
-        grip.setPadding(svc.px(4), svc.px(4), svc.px(6), svc.px(4))
-        bar.addView(grip)
-
-        fun btn(text: String, color: Int, onClick: () -> Unit) {
-            val b = label(svc, text, 10f, color, true)
-            b.setPadding(svc.px(7), svc.px(6), svc.px(7), svc.px(6))
-            b.visibility = View.GONE
-            b.setOnClickListener { onClick() }
-            buttons.add(b)
-            bar.addView(b)
+    private inner class Strip(val left: Boolean) : View(svc) {
+        private var downX = 0f
+        private var downY = 0f
+        private var swiped = false
+        private var fired = false
+        private val fire = Runnable {
+            fired = true
+            Util.vibrate(svc)
+            dock.open(left)
         }
-        btn("MIN", Pal.primary) { svc.global(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_HOME) }
-        btn("MAX", Pal.primary) {
-            if (svc.inSplit()) svc.global(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_TOGGLE_SPLIT_SCREEN)
-            else Util.toast(svc, "ALREADY FULL SCREEN")
-        }
-        btn("SPLIT", Pal.accent) { svc.global(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_TOGGLE_SPLIT_SCREEN) }
-        btn("CLOSE", Pal.danger) { closeForeground() }
 
-        val p = overlayParams(
-            ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT,
-            Gravity.TOP or Gravity.CENTER_HORIZONTAL, 0, svc.px(34)
-        )
-        var sx = 0f
-        var sy = 0f
-        var ox = 0
-        var oy = 0
-        var moved = false
-        grip.setOnTouchListener { _, ev ->
+        @SuppressLint("ClickableViewAccessibility")
+        override fun onTouchEvent(ev: MotionEvent): Boolean {
             when (ev.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
-                    sx = ev.rawX; sy = ev.rawY; ox = p.x; oy = p.y; moved = false
+                    downX = ev.rawX
+                    downY = ev.rawY
+                    swiped = false
+                    fired = false
                 }
                 MotionEvent.ACTION_MOVE -> {
-                    val dx = ev.rawX - sx
-                    val dy = ev.rawY - sy
-                    if (abs(dx) > svc.px(6) || abs(dy) > svc.px(6)) moved = true
-                    if (moved) {
-                        p.x = ox + dx.toInt()
-                        p.y = oy + dy.toInt()
-                        try { wm.updateViewLayout(bar, p) } catch (e: Exception) { }
+                    val dx = ev.rawX - downX
+                    val inward = if (left) dx else -dx
+                    if (!swiped && inward > context.px(14)) {
+                        swiped = true
+                        main.postDelayed(fire, LauncherPrefs.edgeHold.coerceIn(1, 6) * 1000L)
+                    }
+                    // sliding far up or down is something else (scrolling), not a hold
+                    if (swiped && !fired && abs(ev.rawY - downY) > context.px(90)) main.removeCallbacks(fire)
+                }
+                MotionEvent.ACTION_UP -> {
+                    main.removeCallbacks(fire)
+                    val dx = ev.rawX - downX
+                    val inward = if (left) dx else -dx
+                    if (!fired && swiped && inward > context.px(60) && LauncherPrefs.edgeBack) {
+                        Actions.run(svc, GestureAction.BACK)
                     }
                 }
-                MotionEvent.ACTION_UP -> if (!moved) toggle()
+                MotionEvent.ACTION_CANCEL -> main.removeCallbacks(fire)
             }
-            true
+            return true
         }
+    }
+
+    fun build() {
+        destroy()
+        val w = svc.px(LauncherPrefs.edgeW.coerceIn(8, 40))
+        if (LauncherPrefs.edgeLeft) add(Strip(true), overlayParams(w, ViewGroup.LayoutParams.MATCH_PARENT, Gravity.START))
+        if (LauncherPrefs.edgeRight) add(Strip(false), overlayParams(w, ViewGroup.LayoutParams.MATCH_PARENT, Gravity.END))
+    }
+
+    private fun add(v: View, p: WindowManager.LayoutParams) {
         try {
-            bar.visibility = View.GONE
-            wm.addView(bar, p)
-            view = bar
-            params = p
+            wm.addView(v, p)
+            views.add(v)
         } catch (e: Exception) {
         }
     }
 
-    private fun toggle() {
-        expanded = !expanded
-        for (b in buttons) b.visibility = if (expanded) View.VISIBLE else View.GONE
-    }
-
-    private fun closeForeground() {
-        val pkg = svc.foreground
-        if (pkg.isEmpty()) return
-        svc.global(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_HOME)
-        Handler(Looper.getMainLooper()).postDelayed({
-            try {
-                (svc.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager).killBackgroundProcesses(pkg)
-                Util.toast(svc, "CLOSED")
-            } catch (e: Exception) {
-            }
-        }, 450)
-    }
-
-    fun setVisible(v: Boolean) {
-        val bar = view ?: return
-        bar.visibility = if (v) View.VISIBLE else View.GONE
-        if (!v) {
-            expanded = false
-            for (b in buttons) b.visibility = View.GONE
-        }
-    }
-
     fun destroy() {
-        view?.let { try { wm.removeView(it) } catch (e: Exception) { } }
-        view = null
-        buttons.clear()
-        expanded = false
+        for (v in views) try { wm.removeView(v) } catch (e: Exception) { }
+        views.clear()
     }
 }
 
-/** Optional system-wide gestures: swipe in from an edge = back, swipe up on the bottom bar = home / recents. */
+/** Optional bottom bar: swipe up = home, swipe up and hold = recent apps, swipe sideways = back. */
 class GestureStrips(private val svc: MuxService, private val wm: WindowManager) {
     private val views = ArrayList<View>()
 
@@ -430,10 +339,6 @@ class GestureStrips(private val svc: MuxService, private val wm: WindowManager) 
 
     fun build() {
         destroy()
-        if (LauncherPrefs.edgeBack) {
-            add(Strip(0), overlayParams(svc.px(10), ViewGroup.LayoutParams.MATCH_PARENT, Gravity.START))
-            add(Strip(1), overlayParams(svc.px(10), ViewGroup.LayoutParams.MATCH_PARENT, Gravity.END))
-        }
         if (LauncherPrefs.bottomBar) {
             add(Strip(2), overlayParams(ViewGroup.LayoutParams.MATCH_PARENT, svc.px(18), Gravity.BOTTOM))
         }

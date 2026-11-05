@@ -1,7 +1,6 @@
 package com.mux.launcher
 
 import android.accessibilityservice.AccessibilityService
-import android.content.Intent
 import android.content.res.Configuration
 import android.os.Handler
 import android.os.Looper
@@ -10,8 +9,9 @@ import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityWindowInfo
 
 /**
- * The engine behind gestures, the edge dock and the window bar.
- * It only watches which app is in front (package name) and performs system actions. It never reads screen text.
+ * The engine behind gestures and the edge dock.
+ * It performs system actions (back, home, recents, split screen...) and draws invisible edge zones.
+ * It never reads screen text.
  */
 class MuxService : AccessibilityService() {
     companion object {
@@ -19,15 +19,11 @@ class MuxService : AccessibilityService() {
         var instance: MuxService? = null
     }
 
-    var foreground: String = ""
-        private set
-
     private lateinit var wm: WindowManager
     private val handler = Handler(Looper.getMainLooper())
     private var dock: EdgeDock? = null
-    private var bar: WindowBar? = null
+    private var edge: EdgeStrips? = null
     private var strips: GestureStrips? = null
-    private var homePkgs: Set<String> = emptySet()
     private val listener: () -> Unit = { handler.post { rebuild() } }
 
     override fun onServiceConnected() {
@@ -36,52 +32,22 @@ class MuxService : AccessibilityService() {
         LauncherPrefs.init(this)
         AppRepo.ensure(this)
         wm = getSystemService(WINDOW_SERVICE) as WindowManager
-        homePkgs = try {
-            val q = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
-            packageManager.queryIntentActivities(q, 0).map { it.activityInfo.packageName }.toSet()
-        } catch (e: Exception) {
-            emptySet()
-        }
         if (!LauncherPrefs.listeners.contains(listener)) LauncherPrefs.listeners.add(listener)
         rebuild()
     }
 
     private fun rebuild() {
         try {
-            if (dock == null) dock = EdgeDock(this, wm)
+            val d = dock ?: EdgeDock(this, wm).also { dock = it }
+            if (edge == null) edge = EdgeStrips(this, wm, d)
             if (strips == null) strips = GestureStrips(this, wm)
-            if (bar == null) bar = WindowBar(this, wm)
-            dock?.build()
+            edge?.build()
             strips?.build()
-            if (LauncherPrefs.windowBar) bar?.build() else bar?.destroy()
-            updateBar()
         } catch (e: Exception) {
         }
     }
 
-    private fun updateBar() {
-        val show = LauncherPrefs.windowBar && foreground.isNotEmpty() &&
-            foreground != packageName && !homePkgs.contains(foreground)
-        bar?.setVisible(show)
-    }
-
-    override fun onAccessibilityEvent(ev: AccessibilityEvent?) {
-        ev ?: return
-        if (ev.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
-        val p = ev.packageName?.toString() ?: return
-        val cls = ev.className?.toString() ?: ""
-        if (p == "com.android.systemui" || p == "android" || cls.startsWith("android.inputmethodservice")) return
-        if (p == packageName) {
-            // our own overlays also report here: only the launcher screen itself means "home"
-            if (cls == MainActivity::class.java.name) {
-                foreground = p
-                updateBar()
-            }
-            return
-        }
-        foreground = p
-        updateBar()
-    }
+    override fun onAccessibilityEvent(ev: AccessibilityEvent?) {}
 
     override fun onInterrupt() {}
 
@@ -90,10 +56,10 @@ class MuxService : AccessibilityService() {
         handler.postDelayed({ rebuild() }, 250)
     }
 
-    override fun onUnbind(intent: Intent?): Boolean {
+    override fun onUnbind(intent: android.content.Intent?): Boolean {
         LauncherPrefs.listeners.remove(listener)
+        edge?.destroy()
         dock?.destroy()
-        bar?.destroy()
         strips?.destroy()
         instance = null
         return super.onUnbind(intent)
@@ -101,6 +67,7 @@ class MuxService : AccessibilityService() {
 
     fun global(action: Int): Boolean = performGlobalAction(action)
 
+    /** True when two app windows are on screen (split screen). Only counts windows, reads nothing. */
     fun inSplit(): Boolean = try {
         windows.count { it.type == AccessibilityWindowInfo.TYPE_APPLICATION } >= 2
     } catch (e: Exception) {

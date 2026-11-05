@@ -110,6 +110,7 @@ object AppRepo {
                 apps = list
                 loading = false
                 seedDefaults(app)
+                if (list.isNotEmpty()) Grid.purgeMissing(list.map { it.key }.toSet())
             }
         }.start()
     }
@@ -165,6 +166,7 @@ object AppRepo {
         ).filter { !LauncherPrefs.dock.contains(it) }
         LauncherPrefs.seeded = true
         LauncherPrefs.commit()
+        Grid.seedFrom(LauncherPrefs.homeApps)
     }
 
     fun intentFor(e: AppEntry): Intent =

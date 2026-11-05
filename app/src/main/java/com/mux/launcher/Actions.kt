@@ -31,6 +31,7 @@ enum class GestureAction(val label: String) {
     SPLIT("SPLIT SCREEN"),
     TORCH("FLASHLIGHT"),
     SETTINGS("SETTINGS"),
+    OVERVIEW("HOME EDITOR"),
     DOCK("EDGE DOCK");
 
     fun next(): GestureAction = values()[(ordinal + 1) % values().size]
@@ -55,13 +56,14 @@ object UiBus {
 object Actions {
     private var torchOn = false
 
-    /** Run any gesture action from anywhere (launcher screen, edge strips, window bar...). */
+    /** Run any gesture action from anywhere (launcher screen, edge zones...). */
     fun run(ctx: Context, a: GestureAction) {
         when (a) {
             GestureAction.NONE -> {}
             GestureAction.DRAWER -> ui(ctx, "drawer")
             GestureAction.SEARCH -> ui(ctx, "search")
             GestureAction.SETTINGS -> ui(ctx, "settings")
+            GestureAction.OVERVIEW -> ui(ctx, "overview")
             GestureAction.DOCK -> {
                 val s = MuxService.instance
                 if (s != null) s.openDock(LauncherPrefs.edgeLeft || !LauncherPrefs.edgeRight) else needService(ctx)
@@ -176,7 +178,10 @@ object Launch {
         }
     }
 
-    /** The app that is on screen now goes to the top half, [e] opens in the bottom half. */
+    /**
+     * Split screen: the app that is on screen now stays in the top half, [e] opens in the other half.
+     * If split screen is already on, [e] just opens in the other half.
+     */
     fun splitBeside(ctx: Context, e: AppEntry) {
         val s = MuxService.instance
         if (s == null) {
@@ -184,22 +189,43 @@ object Launch {
             open(ctx, e)
             return
         }
-        s.global(AccessibilityService.GLOBAL_ACTION_TOGGLE_SPLIT_SCREEN)
-        main.postDelayed({
+        fun launchAdjacent() {
             try {
                 ctx.startActivity(
-                    AppRepo.intentFor(e).addFlags(Intent.FLAG_ACTIVITY_LAUNCH_ADJACENT or Intent.FLAG_ACTIVITY_MULTIPLE_TASK)
+                    AppRepo.intentFor(e).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_LAUNCH_ADJACENT)
                 )
             } catch (ex: Exception) {
                 open(ctx, e)
             }
-        }, 1000)
+        }
+        if (s.inSplit()) {
+            launchAdjacent()
+            return
+        }
+        if (!s.global(AccessibilityService.GLOBAL_ACTION_TOGGLE_SPLIT_SCREEN)) {
+            Util.toast(ctx, "SPLIT SCREEN NOT SUPPORTED ON THIS PHONE")
+            open(ctx, e)
+            return
+        }
+        // wait until the system really shows two windows, then open the second app
+        var tries = 0
+        val poll = object : Runnable {
+            override fun run() {
+                tries++
+                if (s.inSplit() || tries >= 14) {
+                    main.postDelayed({ launchAdjacent() }, if (s.inSplit()) 350L else 0L)
+                } else {
+                    main.postDelayed(this, 250)
+                }
+            }
+        }
+        main.postDelayed(poll, 400)
     }
 
     /** Open [a] first, then split the screen and put [b] next to it. */
     fun splitPair(ctx: Context, a: AppEntry, b: AppEntry) {
         open(ctx, a)
-        main.postDelayed({ splitBeside(ctx, b) }, 900)
+        main.postDelayed({ splitBeside(ctx, b) }, 1300)
     }
 
     /** Open by the dock mode: FULL, FLOAT or SPLIT. */

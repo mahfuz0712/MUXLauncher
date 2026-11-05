@@ -27,6 +27,8 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         LauncherPrefs.init(this)
+        Grid.init()
+        WidgetHost.init(this)
         enableEdgeToEdge(
             statusBarStyle = SystemBarStyle.dark(Color.TRANSPARENT),
             navigationBarStyle = SystemBarStyle.dark(Color.TRANSPARENT)
@@ -47,6 +49,16 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         UiBus.post(intent.getStringExtra("req") ?: "home")
+    }
+
+    override fun onStart() {
+        super.onStart()
+        WidgetHost.start()
+    }
+
+    override fun onStop() {
+        WidgetHost.stop()
+        super.onStop()
     }
 
     override fun onResume() {

@@ -145,7 +145,7 @@ fun DrawerScreen(
                         modifier = Modifier.weight(1f).fillMaxHeight().nestedScroll(nested)
                     ) {
                         items(list, key = { it.key }) { a ->
-                            AppTile(a, Modifier.fillMaxWidth(), onClick = { onOpen(a) }, onLong = { onMenu(a) })
+                            AppTile(a, Modifier.fillMaxWidth(), src = Src.DRAWER, onClick = { onOpen(a) }, onLong = { onMenu(a) })
                         }
                     }
                 }

@@ -56,7 +56,7 @@ private fun AppPanel(modifier: Modifier) {
         HudText("VERSION $version", color = c.accent, size = 12.sp)
         Spacer(Modifier.height(8.dp))
         HudText(
-            "A sci-fi HUD home screen: app drawer with search and categories, edge dock on both sides, window controls (minimize, maximize, split, close) and system-wide gestures.",
+            "A sci-fi HUD home screen: drag-and-drop home pages with folders and widgets, app drawer with search and categories, edge dock (swipe in and hold), split screen and system-wide gestures.",
             color = c.text, size = 13.sp
         )
     }

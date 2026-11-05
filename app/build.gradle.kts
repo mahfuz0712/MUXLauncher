@@ -4,7 +4,7 @@ plugins {
 }
 
 // Bump ONLY this when you release (tag the GitHub release with the same number, e.g. v1.0.1)
-val appVersionName = "1.0.0"
+val appVersionName = "1.0.1"
 
 android {
     namespace = "com.mux.launcher"
