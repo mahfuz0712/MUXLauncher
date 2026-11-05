@@ -45,10 +45,12 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.math.roundToInt
+import androidx.compose.foundation.ExperimentalFoundationApi
 
 enum class Src { HOME, DOCK, DRAWER, FOLDER }
 
 /** Where things are on screen (window coordinates). Filled in by the home screen while it is shown. */
+@OptIn(ExperimentalFoundationApi::class)
 object Geo {
     var gridTL: Offset = Offset.Zero
     var gridSize: Size = Size.Zero
